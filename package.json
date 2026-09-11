@@ -1,0 +1,49 @@
+{
+  "name": "remark-relgeo",
+  "version": "0.5.0",
+  "description": "Remark plugin for RelGeo preview and embed in fenced code `relgeo` blocks",
+  "homepage": "https://relgeo.github.io/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/relgeo/remark-relgeo.git"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts",
+    "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
+    "lint": "tsc --noEmit",
+    "test": "node --test test/remark-relgeo.test.mjs"
+  },
+  "keywords": [
+    "remark",
+    "markdown",
+    "relgeo",
+    "preview",
+    "embed"
+  ],
+  "author": "Agus Made",
+  "license": "MIT",
+  "dependencies": {
+    "relgeo-core": "^0.4.0",
+    "relgeo-renderer-svg": "^0.4.0",
+    "unist-util-visit": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/mdast": "^4.0.4",
+    "@types/unist": "^3.0.3",
+    "tsup": "^8.5.1",
+    "typescript": "~6.0.3"
+  }
+}
