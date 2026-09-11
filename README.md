@@ -1,11 +1,11 @@
-# remark-relgeo
+# @relgeo/remark-relgeo
 
 Remark plugin for RelGeo preview and embed inside fenced code blocks with the
 language id `relgeo`.
 
 ## Versioning
 
-The package metadata version (`0.5.0`) is independent from the active RelGeo DSL contract version (`v0.5`). This plugin consumes the DSL contract; matching numbers do not mean that package releases and language-contract revisions are the same release stream.
+The `@relgeo/remark-relgeo` package is currently `0.5.0`, on the RelGeo DSL `v0.5` compatibility line. Patch releases may move independently; a breaking language-contract change moves the coordinated package line to `0.6.x`.
 
 ## Intent
 
@@ -27,7 +27,7 @@ Detailed package plan:
 Register the plugin in a remark-based Markdown pipeline:
 
 ```js
-import remarkRelgeo from 'remark-relgeo';
+import remarkRelgeo from '@relgeo/remark-relgeo';
 
 remarkPlugins: [remarkRelgeo]
 ```
@@ -69,7 +69,7 @@ The successful default output is intentionally small:
 </div>
 ```
 
-The plugin does not display the RelGeo source. Use `remark-relgeo-hl` with the
+The plugin does not display the RelGeo source. Use `@relgeo/remark-relgeo-hl` with the
 `rg` fence when source readability is the intent.
 
 ## Current Status

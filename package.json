@@ -1,5 +1,5 @@
 {
-  "name": "remark-relgeo",
+  "name": "@relgeo/remark-relgeo",
   "version": "0.5.0",
   "description": "Remark plugin for RelGeo preview and embed in fenced code `relgeo` blocks",
   "homepage": "https://relgeo.github.io/",
@@ -35,9 +35,13 @@
   ],
   "author": "Agus Made",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "dependencies": {
-    "relgeo-core": "^0.4.0",
-    "relgeo-renderer-svg": "^0.4.0",
+    "@relgeo/core": "^0.5.0",
+    "@relgeo/renderer-svg": "^0.5.0",
     "unist-util-visit": "^5.0.0"
   },
   "devDependencies": {

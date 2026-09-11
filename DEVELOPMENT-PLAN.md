@@ -1,4 +1,4 @@
-# remark-relgeo Development Plan
+# @relgeo/remark-relgeo Development Plan
 
 Status dokumen: `Active Package Plan`
 
@@ -14,7 +14,7 @@ Dokumen terkait:
 
 ## 1. Peran Package
 
-`remark-relgeo` adalah adapter markdown untuk mengubah fenced code `relgeo` menjadi preview atau embed RelGeo.
+`@relgeo/remark-relgeo` adalah adapter markdown untuk mengubah fenced code `relgeo` menjadi preview atau embed RelGeo.
 
 Package ini menjadi bukti penting dari visi RelGeo:
 
@@ -36,7 +36,7 @@ Package ini dianggap matang bila:
 2. integrasi ke site generator umum cukup stabil dan mudah dipakai
 3. kegagalan parse atau render tidak merusak seluruh dokumen
 4. opsi plugin cukup kecil namun ekspresif
-5. boundary terhadap `remark-relgeo-hl` tetap tegas
+5. boundary terhadap `@relgeo/remark-relgeo-hl` tetap tegas
 6. package siap dipublikasikan sendiri sebagai modul ekosistem markdown RelGeo
 
 ---
@@ -54,7 +54,7 @@ Package ini dianggap matang bila:
 ### 3.2 Bukan Tanggung Jawab
 
 1. menampilkan source code untuk block `relgeo`
-2. menggantikan `remark-relgeo-hl`
+2. menggantikan `@relgeo/remark-relgeo-hl`
 3. menyediakan editor interaktif
 4. menangani seluruh export production format
 5. menentukan semantics bahasa RelGeo
@@ -113,8 +113,8 @@ Pipeline target:
 
 Dependency inti saat ini:
 
-1. `relgeo-core`
-2. `relgeo-renderer-svg`
+1. `@relgeo/core`
+2. `@relgeo/renderer-svg`
 3. `unist-util-visit`
 
 Arah yang sehat:
@@ -206,7 +206,7 @@ Tetap perlu dijaga agar API tidak membengkak terlalu cepat.
 Fokus:
 
 1. menegaskan bahwa `relgeo` adalah preview-only
-2. menutup tumpang tindih dengan `remark-relgeo-hl`
+2. menutup tumpang tindih dengan `@relgeo/remark-relgeo-hl`
 3. membakukan output wrapper minimal
 4. membakukan fallback dasar
 
@@ -325,7 +325,7 @@ Kasus yang harus ditutup:
 
 ## 12. Kriteria Matang
 
-`remark-relgeo` dapat disebut matang bila:
+`@relgeo/remark-relgeo` dapat disebut matang bila:
 
 1. niat author `relgeo` selalu terbaca jelas sebagai preview/embed
 2. output stabil dan tidak mencampur source dengan hasil
@@ -381,7 +381,7 @@ Hal penting yang layak dijaga di radar, tetapi tidak perlu menghambat tahap awal
 
 1. fence aktif tetap `relgeo`
 2. default fungsi package adalah preview-only
-3. source display tetap menjadi tanggung jawab `remark-relgeo-hl`
+3. source display tetap menjadi tanggung jawab `@relgeo/remark-relgeo-hl`
 4. runtime default tetap memanfaatkan compile dan renderer RelGeo aktif
 5. docs-site adalah consumer awal, bukan satu-satunya target akhir
 

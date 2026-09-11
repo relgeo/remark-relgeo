@@ -1,5 +1,5 @@
-import { compileRelGeo } from 'relgeo-core';
-import { renderToSVG } from 'relgeo-renderer-svg';
+import { compileRelGeo } from '@relgeo/core';
+import { renderToSVG } from '@relgeo/renderer-svg';
 import type { Code, Root } from 'mdast';
 import { visit } from 'unist-util-visit';
 

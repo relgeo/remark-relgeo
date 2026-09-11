@@ -1,4 +1,4 @@
-declare module 'relgeo-core' {
+declare module '@relgeo/core' {
   export function compileRelGeo(
     yaml: string,
     options?: {
@@ -8,7 +8,7 @@ declare module 'relgeo-core' {
   ): unknown;
 }
 
-declare module 'relgeo-renderer-svg' {
+declare module '@relgeo/renderer-svg' {
   export function renderToSVG(
     scene: unknown,
     options?: {
