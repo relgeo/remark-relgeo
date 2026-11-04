@@ -103,7 +103,10 @@ function normalizePreviewError(error: unknown, fallbackCode: string) {
   };
   const rawMessage = error instanceof Error ? error.message : String(error);
   const prefixedCode = rawMessage.match(ERROR_CODE_PREFIX)?.[1];
-  const code = candidate.code ?? prefixedCode ?? fallbackCode;
+  // The preview plugin owns its public failure vocabulary. Core diagnostics
+  // remain available through phase/message, but must not replace the
+  // adapter-level code used by markdown consumers.
+  const code = fallbackCode;
   const message = prefixedCode ? rawMessage.replace(ERROR_CODE_PREFIX, '') : rawMessage;
   return {
     code,
@@ -188,16 +191,40 @@ function parseMetaOptions(rawMeta?: string | null): MetaOptions {
   return options;
 }
 
-function renderPreviewFromPipeline(source: string, meta: MetaOptions): string {
+type PreviewRenderResult = {
+  svg: string;
+  diagnostic?: RemarkRelgeoDiagnostic;
+};
+
+function renderPreviewFromPipeline(
+  source: string,
+  meta: MetaOptions,
+  code: AnnotatedCode,
+  fence: string,
+): PreviewRenderResult {
   const scene = compileRelGeo(source, {
     profile: meta.profile,
     targetUnit: (meta.unit as 'px' | 'mm' | 'cm' | 'm' | 'in' | undefined) ?? 'px',
-  });
+  }) as { violations?: Array<{ message: string }> };
 
-  return renderToSVG(scene, {
-    padding: meta.padding ?? 0,
-    sheetId: meta.sheet,
-  });
+  const violation = scene.violations?.[0];
+  const diagnostic = violation
+    ? {
+        code: 'RUNTIME_CONSTRAINT_VIOLATION',
+        severity: 'warning' as const,
+        message: violation.message,
+        phase: 'constraint',
+        location: sourceLocation(code, fence),
+      }
+    : undefined;
+
+  return {
+    svg: renderToSVG(scene, {
+      padding: meta.padding ?? 0,
+      sheetId: meta.sheet,
+    }),
+    ...(diagnostic ? { diagnostic } : {}),
+  };
 }
 
 function svgToDataUri(svg: string): string {
@@ -220,8 +247,14 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
 
       try {
         const customPreview = options.renderPreview?.(code.value, code);
-        renderedPreview = customPreview ?? renderPreviewFromPipeline(code.value, meta);
-        if (!isSafeSvg(renderedPreview)) {
+        if (customPreview !== undefined && customPreview !== null) {
+          renderedPreview = customPreview;
+        } else {
+          const pipelineResult = renderPreviewFromPipeline(code.value, meta, code, fence);
+          renderedPreview = pipelineResult.svg;
+          diagnostic = pipelineResult.diagnostic ?? null;
+        }
+        if (renderedPreview === null || !isSafeSvg(renderedPreview)) {
           diagnostic = createPreviewDiagnostic(
             new Error('Preview output is not a safe SVG document.'),
             code,
@@ -237,19 +270,36 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
         throw new RemarkRelgeoError(diagnostic);
       }
 
+      const previewAvailable = Boolean(renderedPreview)
+        && (!diagnostic || diagnostic.severity !== 'error');
+      const fallbackDiagnostic = diagnostic ?? createPreviewDiagnostic(
+        new Error('Preview renderer did not return output.'),
+        code,
+        fence,
+      );
+
       code.lang = null;
       code.data = {
         ...(code.data ?? {}),
         hName: 'div',
-        hProperties: renderedPreview && !diagnostic
+        hProperties: previewAvailable
           ? {
-              className: [`${classPrefix}__canvas`],
+              className: [
+                `${classPrefix}__canvas`,
+                ...(diagnostic ? [`${classPrefix}__canvas--diagnostic`] : []),
+              ],
               'data-relgeo-kind': 'preview',
               'data-relgeo-fence': fence,
               'data-relgeo-dsl-version': RELGEO_DSL_VERSION,
               'data-relgeo-package-line': RELGEO_PACKAGE_LINE,
               'data-relgeo-plugin': 'remark-relgeo',
               'data-relgeo-meta': code.meta ?? '',
+              ...(diagnostic
+                ? {
+                    'data-relgeo-diagnostic': serializeDiagnostic(diagnostic),
+                    'data-relgeo-diagnostic-severity': diagnostic.severity,
+                  }
+                : {}),
             }
           : {
               className: [`${classPrefix}__placeholder`],
@@ -259,23 +309,17 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
               'data-relgeo-package-line': RELGEO_PACKAGE_LINE,
               'data-relgeo-plugin': 'remark-relgeo',
               'data-relgeo-meta': code.meta ?? '',
-              'data-relgeo-diagnostic': serializeDiagnostic(
-                diagnostic ?? createPreviewDiagnostic(
-                  new Error('Preview renderer did not return output.'),
-                  code,
-                  fence,
-                ),
-              ),
+              'data-relgeo-diagnostic': serializeDiagnostic(fallbackDiagnostic),
               role: 'alert',
             },
-        hChildren: renderedPreview && !diagnostic
+        hChildren: previewAvailable
           ? [
               {
                 type: 'element',
                 tagName: 'img',
                 properties: {
                   className: [`${classPrefix}__image`],
-                  src: svgToDataUri(renderedPreview),
+                  src: svgToDataUri(renderedPreview!),
                   alt: 'Rendered RelGeo preview',
                   loading: 'lazy',
                   decoding: 'async',

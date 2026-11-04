@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import remarkRelgeo from '../dist/index.mjs';
 
@@ -12,6 +13,11 @@ objects:
     meta:
       fill: "#e2e8f0"
       stroke: "#64748b"`;
+
+const runtimeDiagnosticSource = readFileSync(
+  new URL('../../fixtures/reference/14-v05-runtime-align-violation.yaml', import.meta.url),
+  'utf8',
+);
 
 function runPlugin({ lang = 'relgeo', value = validSource, meta = null, options, position } = {}) {
   const tree = {
@@ -51,6 +57,54 @@ test('preserves fence metadata while applying render options through the pipelin
 
   assert.equal(props['data-relgeo-meta'], 'padding=4 unit=mm');
   assert.match(svg, /viewBox="-4 -4 88 48"/);
+});
+
+test('keeps a valid preview when the runtime reports a non-fatal constraint diagnostic', () => {
+  const node = runPlugin({
+    value: runtimeDiagnosticSource,
+    position: {
+      start: { line: 12, column: 1, offset: 120 },
+      end: { line: 20, column: 20, offset: 260 },
+    },
+  });
+  const props = node.data.hProperties;
+  const image = node.data.hChildren[0];
+
+  assert.equal(props['data-relgeo-kind'], 'preview');
+  assert.deepEqual(props.className, [
+    'relgeo-preview__canvas',
+    'relgeo-preview__canvas--diagnostic',
+  ]);
+  assert.equal(props['data-relgeo-diagnostic-severity'], 'warning');
+  assert.equal(image.tagName, 'img');
+  assert.match(decodeURIComponent(image.properties.src.split(',', 2)[1]), /^<svg\s/);
+
+  const diagnostic = JSON.parse(props['data-relgeo-diagnostic']);
+  assert.deepEqual(diagnostic, {
+    code: 'RUNTIME_CONSTRAINT_VIOLATION',
+    severity: 'warning',
+    message: 'Points are not aligned. Distance: 14.1421',
+    phase: 'constraint',
+    location: {
+      fence: 'relgeo',
+      range: {
+        start: { line: 12, column: 1, offset: 120 },
+        end: { line: 20, column: 20, offset: 260 },
+      },
+    },
+  });
+});
+
+test('allows strict callers to fail on non-fatal runtime diagnostics', () => {
+  assert.throws(
+    () => runPlugin({
+      value: runtimeDiagnosticSource,
+      options: { failurePolicy: 'strict' },
+    }),
+    (error) => error.name === 'RemarkRelgeoError'
+      && error.diagnostic.code === 'RUNTIME_CONSTRAINT_VIOLATION'
+      && error.diagnostic.severity === 'warning',
+  );
 });
 
 test('uses a custom render hook without exposing source code', () => {

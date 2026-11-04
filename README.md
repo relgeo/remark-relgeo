@@ -57,9 +57,11 @@ The plugin also accepts the current lightweight fence metadata options:
 
 Without `padding`, embedded previews default to `0` so the result can blend
 into the host document. Invalid source produces a safe placeholder instead of
-throwing through the whole Markdown document. Set `failurePolicy: 'strict'`
-when a build must fail on the first preview error; the default is
-`failurePolicy: 'tolerant'`.
+throwing through the whole Markdown document. Runtime constraint diagnostics
+that do not invalidate the resolved scene keep the valid preview and are
+serialized on the preview canvas as a warning. Set `failurePolicy: 'strict'`
+when a build must fail on the first preview error or runtime warning; the
+default is `failurePolicy: 'tolerant'`.
 
 ## Output Contract
 
@@ -73,9 +75,11 @@ The successful default output is intentionally small:
 
 Preview errors use `data-relgeo-kind="preview-error"` and carry a serialized
 `data-relgeo-diagnostic` with a stable `code`, `severity`, `message`, `phase`,
-and fenced-block source location. Custom render-hook output must be a safe SVG;
-unsafe markup becomes a diagnostic in tolerant mode and a thrown
-`RemarkRelgeoError` in strict mode.
+and fenced-block source location. A non-fatal runtime warning keeps
+`data-relgeo-kind="preview"`, the image child, and adds
+`data-relgeo-diagnostic-severity="warning"` plus the same diagnostic payload.
+Custom render-hook output must be a safe SVG; unsafe markup becomes a
+diagnostic in tolerant mode and a thrown `RemarkRelgeoError` in strict mode.
 
 The plugin does not display the RelGeo source. Use `@relgeo/remark-relgeo-hl` with the
 `rg` fence when source readability is the intent.
