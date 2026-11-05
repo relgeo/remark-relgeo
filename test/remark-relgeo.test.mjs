@@ -18,6 +18,10 @@ const runtimeDiagnosticSource = readFileSync(
   new URL('../../fixtures/reference/14-v05-runtime-align-violation.yaml', import.meta.url),
   'utf8',
 );
+const sheetSource = readFileSync(
+  new URL('../../fixtures/reference/03-sheet-title-block.yaml', import.meta.url),
+  'utf8',
+);
 
 function runPlugin({ lang = 'relgeo', value = validSource, meta = null, options, position } = {}) {
   const tree = {
@@ -57,6 +61,92 @@ test('preserves fence metadata while applying render options through the pipelin
 
   assert.equal(props['data-relgeo-meta'], 'padding=4 unit=mm');
   assert.match(svg, /viewBox="-4 -4 88 48"/);
+});
+
+test('supports explicit fence overrides without changing non-target blocks', () => {
+  const target = runPlugin({ lang: 'rg', options: { fence: 'rg' } });
+  const nonTarget = runPlugin({ lang: 'relgeo', options: { fence: 'rg' } });
+
+  assert.equal(target.lang, null);
+  assert.equal(target.data.hProperties['data-relgeo-fence'], 'rg');
+  assert.equal(nonTarget.lang, 'relgeo');
+  assert.equal(nonTarget.data, undefined);
+});
+
+test('preserves source, metadata, position, and surrounding node order', () => {
+  const position = {
+    start: { line: 3, column: 1, offset: 8 },
+    end: { line: 5, column: 4, offset: 42 },
+  };
+  const tree = {
+    type: 'root',
+    children: [
+      { type: 'paragraph', children: [{ type: 'text', value: 'before' }] },
+      { type: 'code', lang: 'relgeo', meta: 'padding=4 unknown=kept', value: validSource, position },
+      { type: 'paragraph', children: [{ type: 'text', value: 'after' }] },
+    ],
+  };
+
+  remarkRelgeo()(tree);
+
+  assert.equal(tree.children[0].children[0].value, 'before');
+  assert.equal(tree.children[1].value, validSource);
+  assert.equal(tree.children[1].meta, 'padding=4 unknown=kept');
+  assert.deepEqual(tree.children[1].position, position);
+  assert.equal(tree.children[2].children[0].value, 'after');
+});
+
+test('keeps mixed blocks deterministic across repeated transforms', () => {
+  const makeTree = () => ({
+    type: 'root',
+    children: [
+      { type: 'code', lang: 'yaml', meta: null, value: 'keep: me' },
+      { type: 'code', lang: 'relgeo', meta: null, value: validSource },
+      { type: 'code', lang: 'relgeo', meta: null, value: 'not valid' },
+      { type: 'code', lang: 'relgeo', meta: null, value: validSource },
+    ],
+  });
+  const first = makeTree();
+  const second = makeTree();
+
+  remarkRelgeo()(first);
+  remarkRelgeo()(second);
+
+  assert.deepEqual(first, second);
+  assert.equal(first.children[0].lang, 'yaml');
+  assert.equal(first.children[1].data.hProperties['data-relgeo-kind'], 'preview');
+  assert.equal(first.children[2].data.hProperties['data-relgeo-kind'], 'preview-error');
+  assert.equal(first.children[3].data.hProperties['data-relgeo-kind'], 'preview');
+});
+
+test('renders the canonical sheet when explicitly selected', () => {
+  const node = runPlugin({ value: sheetSource, meta: 'sheet=drawing1 unit=mm' });
+  const svg = decodeURIComponent(node.data.hChildren[0].properties.src.split(',', 2)[1]);
+
+  assert.equal(node.data.hProperties['data-relgeo-kind'], 'preview');
+  assert.match(svg, /SHEET: Assembly Sheet/);
+  assert.match(svg, /viewBox="0 0 297 210"/);
+});
+
+test('reports invalid presentation metadata through tolerant and strict policies', () => {
+  const tolerant = runPlugin({ meta: 'unit=lightyears' });
+  const diagnostic = JSON.parse(tolerant.data.hProperties['data-relgeo-diagnostic']);
+
+  assert.equal(tolerant.data.hProperties['data-relgeo-kind'], 'preview-error');
+  assert.equal(diagnostic.code, 'INVALID_PREVIEW_META');
+
+  assert.throws(
+    () => runPlugin({ meta: 'padding=-1', options: { failurePolicy: 'strict' } }),
+    (error) => error.name === 'RemarkRelgeoError' && error.diagnostic.code === 'INVALID_PREVIEW_META',
+  );
+});
+
+test('validates preview options while ignoring unknown keys', () => {
+  assert.doesNotThrow(() => runPlugin({ options: { unknownOption: true } }));
+  assert.throws(() => remarkRelgeo({ fence: '  ' }), TypeError);
+  assert.throws(() => remarkRelgeo({ classPrefix: 'not valid' }), TypeError);
+  assert.throws(() => remarkRelgeo({ failurePolicy: 'sometimes' }), TypeError);
+  assert.throws(() => remarkRelgeo({ renderPreview: 'not a function' }), TypeError);
 });
 
 test('keeps a valid preview when the runtime reports a non-fatal constraint diagnostic', () => {

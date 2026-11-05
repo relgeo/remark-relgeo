@@ -53,6 +53,21 @@ The plugin also accepts the current lightweight fence metadata options:
 ```relgeo padding=4 unit=mm sheet=front
 ...
 ```
+
+The public plugin options are:
+
+| Option | Default | Contract |
+| --- | --- | --- |
+| `fence` | `relgeo` | Non-empty language identifier; only matching fences are transformed. |
+| `classPrefix` | `relgeo-preview` | Non-empty CSS class prefix without whitespace. |
+| `failurePolicy` | `tolerant` | `tolerant` emits a safe placeholder/diagnostic; `strict` throws `RemarkRelgeoError`. |
+| `renderPreview` | unset | Optional function returning a safe `<svg>` string; unsafe output is rejected. |
+
+Unknown option keys are ignored and are never forwarded to core or the SVG
+renderer. Invalid option values fail deterministically when the plugin is
+created. Reusing one plugin instance is supported. `sheet=...` selects the
+canonical renderer sheet; view selection remains defined by the RelGeo sheet
+and view definitions rather than a separate plugin `view` option.
 ```
 
 Without `padding`, embedded previews default to `0` so the result can blend

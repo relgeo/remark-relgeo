@@ -24,7 +24,7 @@
     "build": "tsup src/index.ts --format esm,cjs --dts",
     "dev": "tsup src/index.ts --format esm,cjs --dts --watch",
     "lint": "tsc --noEmit",
-    "test": "node --test test/remark-relgeo.test.mjs"
+    "test": "node --test test/*.test.mjs"
   },
   "keywords": [
     "remark",

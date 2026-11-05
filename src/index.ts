@@ -57,6 +57,9 @@ type MetaOptions = {
   unit?: string;
 };
 
+const VALID_TARGET_UNITS = new Set(['px', 'mm', 'cm', 'm', 'in']);
+const VALID_FAILURE_POLICIES = new Set<RemarkRelgeoFailurePolicy>(['tolerant', 'strict']);
+
 type AnnotatedCode = Code & {
   data?: {
     hName?: string;
@@ -145,6 +148,37 @@ function serializeDiagnostic(diagnostic: RemarkRelgeoDiagnostic): string {
   return JSON.stringify(diagnostic);
 }
 
+function validateClassPrefix(value: string, optionName: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(value)) {
+    throw new TypeError(`${optionName} must be a non-empty CSS class prefix without whitespace.`);
+  }
+
+  return value;
+}
+
+function validateOptions(options: RemarkRelgeoOptions): {
+  fence: string;
+  classPrefix: string;
+  failurePolicy: RemarkRelgeoFailurePolicy;
+} {
+  const fence = options.fence ?? 'relgeo';
+  if (typeof fence !== 'string' || fence.trim() === '' || /\s/.test(fence)) {
+    throw new TypeError('fence must be a non-empty language identifier without whitespace.');
+  }
+
+  const classPrefix = validateClassPrefix(options.classPrefix ?? 'relgeo-preview', 'classPrefix');
+  const failurePolicy = options.failurePolicy ?? 'tolerant';
+  if (!VALID_FAILURE_POLICIES.has(failurePolicy)) {
+    throw new TypeError("failurePolicy must be either 'tolerant' or 'strict'.");
+  }
+
+  if (options.renderPreview !== undefined && typeof options.renderPreview !== 'function') {
+    throw new TypeError('renderPreview must be a function when provided.');
+  }
+
+  return { fence, classPrefix, failurePolicy };
+}
+
 function isSafeSvg(svg: string): boolean {
   const trimmed = svg.trim();
   return /^<svg\b/i.test(trimmed)
@@ -176,15 +210,19 @@ function parseMetaOptions(rawMeta?: string | null): MetaOptions {
     }
 
     if (key === 'unit') {
+      if (!VALID_TARGET_UNITS.has(value)) {
+        throw new Error(`INVALID_PREVIEW_META: unit must be one of ${[...VALID_TARGET_UNITS].join(', ')}.`);
+      }
       options.unit = value;
       continue;
     }
 
     if (key === 'padding') {
       const parsed = Number(value);
-      if (Number.isFinite(parsed)) {
-        options.padding = parsed;
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        throw new Error('INVALID_PREVIEW_META: padding must be a non-negative number.');
       }
+      options.padding = parsed;
     }
   }
 
@@ -232,20 +270,19 @@ function svgToDataUri(svg: string): string {
 }
 
 export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
-  const fence = options.fence ?? 'relgeo';
-  const classPrefix = options.classPrefix ?? 'relgeo-preview';
-  const failurePolicy = options.failurePolicy ?? 'tolerant';
+  const { fence, classPrefix, failurePolicy } = validateOptions(options);
 
   return function transformer(tree: Root) {
     visit(tree, 'code', (node) => {
       const code = node as AnnotatedCode;
       if (code.lang !== fence) return;
 
-      const meta = parseMetaOptions(code.meta);
+      let meta: MetaOptions = {};
       let renderedPreview: string | null = null;
       let diagnostic: RemarkRelgeoDiagnostic | null = null;
 
       try {
+        meta = parseMetaOptions(code.meta);
         const customPreview = options.renderPreview?.(code.value, code);
         if (customPreview !== undefined && customPreview !== null) {
           renderedPreview = customPreview;
@@ -263,7 +300,10 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
           );
         }
       } catch (error) {
-        diagnostic = createPreviewDiagnostic(error, code, fence);
+        const fallbackCode = error instanceof Error && error.message.startsWith('INVALID_PREVIEW_META:')
+          ? 'INVALID_PREVIEW_META'
+          : 'PREVIEW_RENDER_FAILED';
+        diagnostic = createPreviewDiagnostic(error, code, fence, fallbackCode);
       }
 
       if (diagnostic && failurePolicy === 'strict') {
