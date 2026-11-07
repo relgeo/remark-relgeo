@@ -34,6 +34,32 @@ export class RemarkRelgeoError extends Error {
   }
 }
 
+/** Configuration failures are typed, actionable, and safe to cross the
+ * plugin factory boundary without exposing an unclassified exception. */
+export class RemarkRelgeoConfigurationError extends TypeError {
+  readonly code = 'INVALID_PREVIEW_OPTIONS';
+  readonly phase = 'validate' as const;
+  readonly path: string;
+
+  constructor(message: string, path: string) {
+    super(message);
+    this.name = 'RemarkRelgeoConfigurationError';
+    this.path = path;
+  }
+}
+
+class PreviewBoundaryError extends Error {
+  readonly phase: string;
+  readonly code: string;
+
+  constructor(code: string, message: string, phase: string) {
+    super(`${code}: ${message}`);
+    this.name = 'PreviewBoundaryError';
+    this.code = code;
+    this.phase = phase;
+  }
+}
+
 export interface RemarkRelgeoOptions {
   classPrefix?: string;
   fence?: string;
@@ -59,6 +85,8 @@ type MetaOptions = {
 
 const VALID_TARGET_UNITS = new Set(['px', 'mm', 'cm', 'm', 'in']);
 const VALID_FAILURE_POLICIES = new Set<RemarkRelgeoFailurePolicy>(['tolerant', 'strict']);
+const VALID_DIAGNOSTIC_PHASES = new Set(['parse', 'validate', 'resolve', 'runtime', 'constraint']);
+const VALID_DIAGNOSTIC_SEVERITIES = new Set(['error', 'warning', 'info']);
 
 type AnnotatedCode = Code & {
   data?: {
@@ -100,22 +128,31 @@ function inferDiagnosticPhase(code: string): string {
 
 function normalizePreviewError(error: unknown, fallbackCode: string) {
   const candidate = (error && typeof error === 'object' ? error : {}) as {
-    code?: string;
     phase?: string;
-    severity?: 'error' | 'warning' | 'info';
+    severity?: string;
+    message?: string;
   };
-  const rawMessage = error instanceof Error ? error.message : String(error);
-  const prefixedCode = rawMessage.match(ERROR_CODE_PREFIX)?.[1];
+  const rawMessage = typeof candidate.message === 'string'
+    ? candidate.message
+    : error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : 'Unknown error';
+  const message = rawMessage.replace(ERROR_CODE_PREFIX, '').trim() || 'Unknown error';
   // The preview plugin owns its public failure vocabulary. Core diagnostics
   // remain available through phase/message, but must not replace the
   // adapter-level code used by markdown consumers.
-  const code = fallbackCode;
-  const message = prefixedCode ? rawMessage.replace(ERROR_CODE_PREFIX, '') : rawMessage;
+  const phase = typeof candidate.phase === 'string' && VALID_DIAGNOSTIC_PHASES.has(candidate.phase)
+    ? candidate.phase
+    : inferDiagnosticPhase(fallbackCode);
   return {
-    code,
-    severity: candidate.severity ?? 'error',
+    code: fallbackCode,
+    severity: VALID_DIAGNOSTIC_SEVERITIES.has(candidate.severity ?? '')
+      ? candidate.severity as 'error' | 'warning' | 'info'
+      : 'error',
     message,
-    phase: candidate.phase ?? inferDiagnosticPhase(code),
+    phase,
   };
 }
 
@@ -150,7 +187,10 @@ function serializeDiagnostic(diagnostic: RemarkRelgeoDiagnostic): string {
 
 function validateClassPrefix(value: string, optionName: string): string {
   if (!/^[A-Za-z_][A-Za-z0-9_-]*$/.test(value)) {
-    throw new TypeError(`${optionName} must be a non-empty CSS class prefix without whitespace.`);
+    throw new RemarkRelgeoConfigurationError(
+      `${optionName} must be a non-empty CSS class prefix without whitespace.`,
+      `options.${optionName}`,
+    );
   }
 
   return value;
@@ -163,17 +203,26 @@ function validateOptions(options: RemarkRelgeoOptions): {
 } {
   const fence = options.fence ?? 'relgeo';
   if (typeof fence !== 'string' || fence.trim() === '' || /\s/.test(fence)) {
-    throw new TypeError('fence must be a non-empty language identifier without whitespace.');
+    throw new RemarkRelgeoConfigurationError(
+      'fence must be a non-empty language identifier without whitespace.',
+      'options.fence',
+    );
   }
 
   const classPrefix = validateClassPrefix(options.classPrefix ?? 'relgeo-preview', 'classPrefix');
   const failurePolicy = options.failurePolicy ?? 'tolerant';
   if (!VALID_FAILURE_POLICIES.has(failurePolicy)) {
-    throw new TypeError("failurePolicy must be either 'tolerant' or 'strict'.");
+    throw new RemarkRelgeoConfigurationError(
+      "failurePolicy must be either 'tolerant' or 'strict'.",
+      'options.failurePolicy',
+    );
   }
 
   if (options.renderPreview !== undefined && typeof options.renderPreview !== 'function') {
-    throw new TypeError('renderPreview must be a function when provided.');
+    throw new RemarkRelgeoConfigurationError(
+      'renderPreview must be a function when provided.',
+      'options.renderPreview',
+    );
   }
 
   return { fence, classPrefix, failurePolicy };
@@ -211,7 +260,11 @@ function parseMetaOptions(rawMeta?: string | null): MetaOptions {
 
     if (key === 'unit') {
       if (!VALID_TARGET_UNITS.has(value)) {
-        throw new Error(`INVALID_PREVIEW_META: unit must be one of ${[...VALID_TARGET_UNITS].join(', ')}.`);
+        throw new PreviewBoundaryError(
+          'INVALID_PREVIEW_META',
+          `unit must be one of ${[...VALID_TARGET_UNITS].join(', ')}.`,
+          'validate',
+        );
       }
       options.unit = value;
       continue;
@@ -220,7 +273,11 @@ function parseMetaOptions(rawMeta?: string | null): MetaOptions {
     if (key === 'padding') {
       const parsed = Number(value);
       if (!Number.isFinite(parsed) || parsed < 0) {
-        throw new Error('INVALID_PREVIEW_META: padding must be a non-negative number.');
+        throw new PreviewBoundaryError(
+          'INVALID_PREVIEW_META',
+          'padding must be a non-negative number.',
+          'validate',
+        );
       }
       options.padding = parsed;
     }
@@ -293,7 +350,11 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
         }
         if (renderedPreview === null || !isSafeSvg(renderedPreview)) {
           diagnostic = createPreviewDiagnostic(
-            new Error('Preview output is not a safe SVG document.'),
+            new PreviewBoundaryError(
+              'UNSAFE_PREVIEW_OUTPUT',
+              'Preview output is not a safe SVG document.',
+              'runtime',
+            ),
             code,
             fence,
             'UNSAFE_PREVIEW_OUTPUT',
@@ -313,7 +374,11 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
       const previewAvailable = Boolean(renderedPreview)
         && (!diagnostic || diagnostic.severity !== 'error');
       const fallbackDiagnostic = diagnostic ?? createPreviewDiagnostic(
-        new Error('Preview renderer did not return output.'),
+        new PreviewBoundaryError(
+          'PREVIEW_RENDER_FAILED',
+          'Preview renderer did not return output.',
+          'runtime',
+        ),
         code,
         fence,
       );

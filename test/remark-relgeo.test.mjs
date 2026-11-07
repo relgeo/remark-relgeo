@@ -22,6 +22,10 @@ const sheetSource = readFileSync(
   new URL('../../fixtures/reference/03-sheet-title-block.yaml', import.meta.url),
   'utf8',
 );
+const presentationEscapingSource = readFileSync(
+  new URL('../../renderer-svg/src/__tests__/fixtures/v05-presentation-escaping.yaml', import.meta.url),
+  'utf8',
+);
 
 function runPlugin({ lang = 'relgeo', value = validSource, meta = null, options, position } = {}) {
   const tree = {
@@ -128,6 +132,16 @@ test('renders the canonical sheet when explicitly selected', () => {
   assert.match(svg, /viewBox="0 0 297 210"/);
 });
 
+test('preserves safe semantic escaping through the Markdown preview transport', () => {
+  const node = runPlugin({ value: presentationEscapingSource });
+  const image = node.data.hChildren[0];
+  const svg = decodeURIComponent(image.properties.src.split(',', 2)[1]);
+
+  assert.doesNotMatch(svg, /<script>/);
+  assert.match(svg, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert.match(svg, /&quot;&gt;&lt;script&gt;alert\(2\)&lt;\/script&gt;/);
+});
+
 test('reports invalid presentation metadata through tolerant and strict policies', () => {
   const tolerant = runPlugin({ meta: 'unit=lightyears' });
   const diagnostic = JSON.parse(tolerant.data.hProperties['data-relgeo-diagnostic']);
@@ -141,9 +155,36 @@ test('reports invalid presentation metadata through tolerant and strict policies
   );
 });
 
+test('normalizes malformed core-like failures at the Markdown boundary', () => {
+  const tolerant = runPlugin({
+    options: {
+      renderPreview: () => {
+        throw Object.assign(new Error('INTERNAL_CODE: callback failed'), {
+          code: 'INTERNAL_CODE',
+          phase: 'host',
+          severity: 'fatal',
+        });
+      },
+    },
+  });
+  const diagnostic = JSON.parse(tolerant.data.hProperties['data-relgeo-diagnostic']);
+
+  assert.equal(diagnostic.code, 'PREVIEW_RENDER_FAILED');
+  assert.equal(diagnostic.severity, 'error');
+  assert.equal(diagnostic.message, 'callback failed');
+  assert.equal(diagnostic.phase, 'resolve');
+});
+
 test('validates preview options while ignoring unknown keys', () => {
   assert.doesNotThrow(() => runPlugin({ options: { unknownOption: true } }));
-  assert.throws(() => remarkRelgeo({ fence: '  ' }), TypeError);
+  assert.throws(
+    () => remarkRelgeo({ fence: '  ' }),
+    (error) => error instanceof TypeError
+      && error.name === 'RemarkRelgeoConfigurationError'
+      && error.code === 'INVALID_PREVIEW_OPTIONS'
+      && error.phase === 'validate'
+      && error.path === 'options.fence',
+  );
   assert.throws(() => remarkRelgeo({ classPrefix: 'not valid' }), TypeError);
   assert.throws(() => remarkRelgeo({ failurePolicy: 'sometimes' }), TypeError);
   assert.throws(() => remarkRelgeo({ renderPreview: 'not a function' }), TypeError);
