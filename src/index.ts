@@ -7,6 +7,7 @@ export const RELGEO_DSL_VERSION = '0.5';
 export const RELGEO_PACKAGE_LINE = '0.5.x';
 
 export type RemarkRelgeoFailurePolicy = 'tolerant' | 'strict';
+export type RemarkRelgeoAssetStrategy = 'inline-data-uri';
 
 export interface RemarkRelgeoSourceLocation {
   fence: string;
@@ -64,6 +65,8 @@ export interface RemarkRelgeoOptions {
   classPrefix?: string;
   fence?: string;
   failurePolicy?: RemarkRelgeoFailurePolicy;
+  assetStrategy?: RemarkRelgeoAssetStrategy;
+  accessibleLabel?: string;
   renderPreview?: (source: string, node: Code) => string | null | undefined;
 }
 
@@ -102,7 +105,7 @@ type PositionLike = {
   end: { line: number; column: number; offset?: number };
 };
 
-const UNSAFE_SVG_PATTERN = /<\/?(?:script|iframe|object|embed|foreignObject)\b|\bon[a-z]+\s*=|(?:href|src|xlink:href)\s*=\s*["']\s*(?:javascript:|data:text\/html)|url\s*\(\s*javascript:/i;
+const UNSAFE_SVG_PATTERN = /<\/?(?:script|iframe|object|embed|foreignObject|style|link)\b|\bon[a-z]+\s*=|\b(?:href|src|xlink:href)\s*=|url\s*\(\s*(?:javascript:|data:|https?:|\/\/)|expression\s*\(|@import\b/i;
 const ERROR_CODE_PREFIX = /^([A-Z][A-Z0-9_]*):\s*/;
 
 function inferDiagnosticPhase(code: string): string {
@@ -200,6 +203,8 @@ function validateOptions(options: RemarkRelgeoOptions): {
   fence: string;
   classPrefix: string;
   failurePolicy: RemarkRelgeoFailurePolicy;
+  assetStrategy: RemarkRelgeoAssetStrategy;
+  accessibleLabel: string;
 } {
   const fence = options.fence ?? 'relgeo';
   if (typeof fence !== 'string' || fence.trim() === '' || /\s/.test(fence)) {
@@ -225,7 +230,23 @@ function validateOptions(options: RemarkRelgeoOptions): {
     );
   }
 
-  return { fence, classPrefix, failurePolicy };
+  const assetStrategy = options.assetStrategy ?? 'inline-data-uri';
+  if (assetStrategy !== 'inline-data-uri') {
+    throw new RemarkRelgeoConfigurationError(
+      'assetStrategy must be inline-data-uri; external assets are outside the plugin boundary.',
+      'options.assetStrategy',
+    );
+  }
+
+  const accessibleLabel = options.accessibleLabel ?? 'Rendered RelGeo preview';
+  if (typeof accessibleLabel !== 'string' || accessibleLabel.trim() === '') {
+    throw new RemarkRelgeoConfigurationError(
+      'accessibleLabel must be a non-empty string.',
+      'options.accessibleLabel',
+    );
+  }
+
+  return { fence, classPrefix, failurePolicy, assetStrategy, accessibleLabel: accessibleLabel.trim() };
 }
 
 function isSafeSvg(svg: string): boolean {
@@ -296,6 +317,7 @@ function renderPreviewFromPipeline(
   meta: MetaOptions,
   code: AnnotatedCode,
   fence: string,
+  accessibleLabel: string,
 ): PreviewRenderResult {
   const scene = compileRelGeo(source, {
     profile: meta.profile,
@@ -314,10 +336,10 @@ function renderPreviewFromPipeline(
     : undefined;
 
   return {
-    svg: renderToSVG(scene, {
+    svg: addAccessibleSvgMetadata(renderToSVG(scene, {
       padding: meta.padding ?? 0,
       sheetId: meta.sheet,
-    }),
+    }), accessibleLabel),
     ...(diagnostic ? { diagnostic } : {}),
   };
 }
@@ -326,8 +348,27 @@ function svgToDataUri(svg: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+function escapeXmlText(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&apos;',
+  }[character] ?? character));
+}
+
+function addAccessibleSvgMetadata(svg: string, label: string): string {
+  const openingTagEnd = svg.indexOf('>');
+  if (openingTagEnd < 0) return svg;
+  const metadata = `\n<title>${escapeXmlText(label)}</title>\n<desc>${escapeXmlText(
+    `RelGeo ${RELGEO_DSL_VERSION} rendered preview`,
+  )}</desc>`;
+  return `${svg.slice(0, openingTagEnd + 1)}${metadata}${svg.slice(openingTagEnd + 1)}`;
+}
+
 export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
-  const { fence, classPrefix, failurePolicy } = validateOptions(options);
+  const { fence, classPrefix, failurePolicy, assetStrategy, accessibleLabel } = validateOptions(options);
 
   return function transformer(tree: Root) {
     visit(tree, 'code', (node) => {
@@ -344,7 +385,7 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
         if (customPreview !== undefined && customPreview !== null) {
           renderedPreview = customPreview;
         } else {
-          const pipelineResult = renderPreviewFromPipeline(code.value, meta, code, fence);
+          const pipelineResult = renderPreviewFromPipeline(code.value, meta, code, fence, accessibleLabel);
           renderedPreview = pipelineResult.svg;
           diagnostic = pipelineResult.diagnostic ?? null;
         }
@@ -386,7 +427,7 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
       code.lang = null;
       code.data = {
         ...(code.data ?? {}),
-        hName: 'div',
+        hName: previewAvailable ? 'figure' : 'div',
         hProperties: previewAvailable
           ? {
               className: [
@@ -399,6 +440,9 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
               'data-relgeo-package-line': RELGEO_PACKAGE_LINE,
               'data-relgeo-plugin': 'remark-relgeo',
               'data-relgeo-meta': code.meta ?? '',
+              'data-relgeo-asset-strategy': assetStrategy,
+              role: 'figure',
+              'aria-label': accessibleLabel,
               ...(diagnostic
                 ? {
                     'data-relgeo-diagnostic': serializeDiagnostic(diagnostic),
@@ -425,7 +469,7 @@ export function remarkRelgeo(options: RemarkRelgeoOptions = {}) {
                 properties: {
                   className: [`${classPrefix}__image`],
                   src: svgToDataUri(renderedPreview!),
-                  alt: 'Rendered RelGeo preview',
+                  alt: accessibleLabel,
                   loading: 'lazy',
                   decoding: 'async',
                 },

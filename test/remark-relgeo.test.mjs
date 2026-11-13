@@ -44,17 +44,23 @@ test('turns relgeo into a lightweight preview-only image', () => {
   const svg = decodeURIComponent(image.properties.src.split(',', 2)[1]);
 
   assert.equal(node.lang, null);
-  assert.equal(node.data.hName, 'div');
+  assert.equal(node.data.hName, 'figure');
   assert.deepEqual(props.className, ['relgeo-preview__canvas']);
   assert.equal(props['data-relgeo-kind'], 'preview');
   assert.equal(props['data-relgeo-fence'], 'relgeo');
   assert.equal(props['data-relgeo-dsl-version'], '0.5');
   assert.equal(props['data-relgeo-package-line'], '0.5.x');
   assert.equal(props['data-relgeo-plugin'], 'remark-relgeo');
+  assert.equal(props['data-relgeo-asset-strategy'], 'inline-data-uri');
+  assert.equal(props.role, 'figure');
+  assert.equal(props['aria-label'], 'Rendered RelGeo preview');
   assert.equal(image.tagName, 'img');
   assert.deepEqual(image.properties.className, ['relgeo-preview__image']);
+  assert.equal(image.properties.alt, 'Rendered RelGeo preview');
   assert.match(image.properties.src, /^data:image\/svg\+xml/);
   assert.match(svg, /^<svg\s/);
+  assert.match(svg, /<title>Rendered RelGeo preview<\/title>/);
+  assert.match(svg, /<desc>RelGeo 0\.5 rendered preview<\/desc>/);
   assert.doesNotMatch(svg, /<pre|<code/);
 });
 
@@ -304,6 +310,9 @@ test('rejects unsafe custom SVG output and reports a structured diagnostic', () 
     '<svg><rect onclick="alert(1)" /></svg>',
     '<svg><image href="javascript:alert(1)" /></svg>',
     '<svg><image href="data:text/html;base64,PHNjcmlwdD4=" /></svg>',
+    '<svg><image href="https://example.com/a.svg" /></svg>',
+    '<svg><use xlink:href="#unsafe" /></svg>',
+    '<svg><rect style="fill: url(https://example.com/a.svg)" /></svg>',
   ];
 
   for (const unsafeSvg of unsafeSvgs) {
@@ -331,4 +340,25 @@ test('leaves non-relgeo fences untouched', () => {
 
   assert.equal(node.lang, 'rg');
   assert.equal(node.data, undefined);
+});
+
+test('keeps inline asset output deterministic and validates accessible naming policy', () => {
+  const first = runPlugin({ options: { accessibleLabel: 'Panel preview' } });
+  const second = runPlugin({ options: { accessibleLabel: 'Panel preview' } });
+
+  assert.equal(first.data.hProperties['data-relgeo-asset-strategy'], 'inline-data-uri');
+  assert.equal(first.data.hProperties.role, 'figure');
+  assert.equal(first.data.hProperties['aria-label'], 'Panel preview');
+  assert.equal(first.data.hChildren[0].properties.alt, 'Panel preview');
+  assert.equal(first.data.hChildren[0].properties.src, second.data.hChildren[0].properties.src);
+  assert.throws(
+    () => remarkRelgeo({ assetStrategy: 'external' }),
+    (error) => error.name === 'RemarkRelgeoConfigurationError'
+      && error.path === 'options.assetStrategy',
+  );
+  assert.throws(
+    () => remarkRelgeo({ accessibleLabel: ' ' }),
+    (error) => error.name === 'RemarkRelgeoConfigurationError'
+      && error.path === 'options.accessibleLabel',
+  );
 });
