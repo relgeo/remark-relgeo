@@ -1,6 +1,6 @@
 {
   "name": "@relgeo/remark-relgeo",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Remark plugin for RelGeo preview and embed in fenced code `relgeo` blocks",
   "homepage": "https://relgeo.github.io/",
   "repository": {
